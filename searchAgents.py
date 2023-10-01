@@ -295,6 +295,7 @@ class CornersProblem(search.SearchProblem):
         неполное состояние пространства игры Pacman)
         """
         "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+        return self.startingPosition, self.corners
         util.raiseNotDefined()
 
     def isGoalState(self, state):
@@ -302,6 +303,9 @@ class CornersProblem(search.SearchProblem):
         Проверяет, является ли это состояние поиска целевым состоянием задачи.
         """
         "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+        if state[1]:
+            return False
+        return True
         util.raiseNotDefined()
 
     def getSuccessors(self, state):
@@ -317,19 +321,23 @@ class CornersProblem(search.SearchProblem):
 
         successors = []
         for action in [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]:
-            # Добавьте состояние-приемник в список приемников, если действие является 
-            # допустимым
-            # Ниже фрагмент кода, который проверяет, не попадает ли новая позиция на
-            # стену лабиринта:
-            #   x,y = currentPosition
-            #   dx, dy = Actions.directionToVector(action)
-            #   nextx, nexty = int(x + dx), int(y + dy)
-            #   hitsWall = self.walls[nextx][nexty]
-
-            "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+            x, y = state[0]
+            dx, dy = Actions.directionToVector(action)
+            nextx, nexty = int(x + dx), int(y + dy)
+            hitsWall = self.walls[nextx][nexty]
+            if not hitsWall:
+                newState = (nextx, nexty)
+                if newState in state[1]:
+                    temp = list(state[1])
+                    temp.remove(newState)
+                    temp = tuple(temp)
+                    successors.append( ( (newState,temp), action, 1) )
+                else:
+                    successors.append( ( (newState,state[1]), action, 1) )
 
         self._expanded += 1 # НЕ МЕНЯЙТЕ!
         return successors
+    
 
     def getCostOfActions(self, actions):
         """
@@ -359,10 +367,40 @@ def cornersHeuristic(state, problem):
      допустимой (а также монотонной).
      
     """
-    corners = problem.corners # Координаты углов
-    walls = problem.walls # Стены лабиринта в виде объекта Grid (game.py)
-    "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
-    return 0 # Default to trivial solution
+    distance = 0
+    cornersLeft = list(state[1])
+    pacman = state[0]
+    closest = 0
+    cornersList = []
+    minI = 0
+    distance_to_nearest = 0
+    total = 0
+    
+    if len(cornersLeft) > 0:
+        for i in range(len(cornersLeft)):
+            corner = cornersLeft[i]
+            cornersList.append(abs(pacman[0] - corner[0]) + abs(pacman[1] - corner[1]))
+        distance_to_nearest = min(cornersList)      
+        minI = cornersList.index(distance_to_nearest)
+        closest = cornersLeft[minI]
+      
+        cornersLeft.remove(closest)
+        while len(cornersLeft) > 0:
+          distanceList = []
+          xy1 = closest
+          for i in range(len(cornersLeft)):
+              xy2 = cornersLeft[i]
+              distanceList.append(abs(xy1[0] - xy2[0]) + abs(xy1[1] - xy2[1]))
+          closest2 = min(distanceList)
+          minI = distanceList.index(closest2)
+          closest = cornersLeft[minI]
+          cornersLeft.remove(closest)
+          
+          total = total + closest2
+        distance = distance_to_nearest + total
+      
+    return distance
+
 
 class AStarCornersAgent(SearchAgent):
     "Агент SearchAgent  для FoodSearchProblem, использующий A*-поиск и  foodHeuristic"
@@ -455,9 +493,69 @@ def foodHeuristic(state, problem):
     Последующие вызовы этой эвристики могут получить доступ к этой информации
     issue.heuristicInfo ['wallCount']
     """
-    position, foodGrid = state
-    "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+
+    current, foodGrid = state
+    distance = util.manhattanDistance
+    remaining = foodGrid.asList()
+
+    if len(problem.heuristicInfo) == 0:
+        # predecessor graph class object
+        class SSNode(object):
+            def __init__(self, node, dist=99999):
+                self.node = node
+                self.dist = dist
+
+        #вычисление веса рёбер пары
+        tree = {}
+        remaining.append(current)
+        for start in remaining:
+            tree[start] = {start:0}
+            for node in remaining:
+                if start != node:
+                    if node in tree and start in tree[node]:
+                        #a -> b == b -> a
+                        tree[start][node] = tree[node][start]
+                    else:
+                        cost = mazeDistance(start, node, problem.startingGameState)
+                        tree[start][node] = cost
+        remaining.remove(current)
+
+        #беллман форд init
+        source = max((v, k) for k,v in tree[current].items())[1]
+        vertices = []
+        for node in remaining:
+            if node == source:
+                vertices.append(SSNode(node, 0))
+            else: vertices.append(SSNode(node))
+
+        #беллман форд main
+        for _ in range(len(vertices) - 1):
+            for u in vertices:
+                for v in vertices:
+                    if u.dist == 99999: continue
+                    if u.dist + tree[u.node][v.node] < v.dist:
+                        v.dist = u.dist + tree[u.node][v.node]
+
+        path = sorted(((c.dist, c.node) for c in vertices), reverse=True)
+        problem.heuristicInfo = path
+
+    # оставшаяся стоимость на последнем кратчайшем пути
+    if len(remaining) > 0:
+        path = problem.heuristicInfo
+        initial, start = path[0]
+
+        if start in remaining:
+            return distance(current, start) + initial
+
+        for cost, node in path:
+            if current == node: return cost
+            if node in remaining:
+                return cost + distance(current, node)
     return 0
+
+    # position, foodGrid = state
+    "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+    # return 0
 
 class ClosestDotSearchAgent(SearchAgent):
     " Поиск еды с помощью последовательных поисков"
@@ -481,13 +579,15 @@ class ClosestDotSearchAgent(SearchAgent):
         Возвращает путь (список действий) к ближайшей точке, начиная с
         gameState.
         """
+        "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+
         # Несколько полезных элементов startState
         startPosition = gameState.getPacmanPosition()
         food = gameState.getFood()
         walls = gameState.getWalls()
         problem = AnyFoodSearchProblem(gameState)
-   
-        "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+    
+        return search.bfs(problem)
         util.raiseNotDefined()
 
 class AnyFoodSearchProblem(PositionSearchProblem):
@@ -521,9 +621,10 @@ class AnyFoodSearchProblem(PositionSearchProblem):
         """
         Состояние (state) - это позиция Pacman. Заполните кодом проверки цели 
         """
-        x,y = state
-
         "*** ВСТАВЬТЕ ВАШ КОД СЮДА ***"
+
+        x,y = state
+        return self.food[x][y]
         util.raiseNotDefined()
 
 def mazeDistance(point1, point2, gameState):
